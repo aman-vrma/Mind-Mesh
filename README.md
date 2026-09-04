@@ -54,7 +54,7 @@ Backend
 
 🚀 Live Demo
 
-Frontend: mind-mesh-one-mu.vercel.app
+Frontend: [mind-mesh-one-mu.vercel.app](https://mind-mesh-one-mu.vercel.app/)
 
 Backend API: https://mind-mesh-x29v.onrender.com
 
