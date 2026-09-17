@@ -27,7 +27,7 @@ export default function OrchestratorCore({ steps = [], isRunning = false, maxRou
       </div>
 
       {/* Progress Flow Pipeline — grows as real turns happen, no phantom future rounds */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         {steps.map((step) => {
           const isFinished = step.status === 'complete';
           const isCurrent = step.status === 'active';

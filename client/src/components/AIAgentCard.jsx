@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import StatusIndicator from './StatusIndicator';
 import { Bot, Sparkles, CheckCircle2 } from 'lucide-react';
 
@@ -13,6 +13,8 @@ export default function AIAgentCard({
   content = null,
   active = false
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
     <div className={`flex-1 flex flex-col rounded-2xl bg-slate-900/40 backdrop-blur-xl border transition-all duration-300 overflow-hidden shadow-xl ${
       active 
@@ -32,7 +34,7 @@ export default function AIAgentCard({
                 {role}
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 font-mono truncate max-w-[140px]">{statusMessage}</p>
+            <p className="text-[10px] text-slate-500 font-mono truncate max-w-[140px] sm:max-w-[180px]">{statusMessage}</p>
           </div>
         </div>
 
@@ -40,11 +42,23 @@ export default function AIAgentCard({
       </div>
 
       {/* Agent Output Preview / Content */}
-      <div className="flex-1 p-4 overflow-y-auto max-h-64 min-h-[160px] text-xs font-sans text-slate-300 leading-relaxed space-y-2">
+      <div className={`flex-1 p-4 overflow-y-auto text-xs font-sans text-slate-300 leading-relaxed space-y-2 transition-all ${
+        isExpanded ? 'max-h-96' : 'max-h-64'
+      } min-h-[160px]`}>
         {content ? (
-          <div className="prose prose-invert prose-xs max-w-none">
-            <p className="whitespace-pre-line text-slate-300 line-clamp-6">{content}</p>
-          </div>
+          <>
+            <div className="prose prose-invert prose-xs max-w-none">
+              <p className={`whitespace-pre-line text-slate-300 ${isExpanded ? '' : 'line-clamp-6'}`}>{content}</p>
+            </div>
+            {content.length > 300 && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium mt-2"
+              >
+                {isExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </>
         ) : (
           <div className="h-full flex flex-col items-center justify-center text-center text-slate-600 space-y-2 py-4">
             <Bot className="h-7 w-7 opacity-30 animate-pulse" />

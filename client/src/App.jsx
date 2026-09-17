@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import AIAgentCard from './components/AIAgentCard';
@@ -9,14 +9,18 @@ import MessageComposer from './components/MessageComposer';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
+  // Get backend API URL from environment variable
+  const API_URL = import.meta.env.VITE_API_URL || 'https://mind-mesh-x29v.onrender.com';
+
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [currentTask, setCurrentTask] = useState('');
   
   const [isProcessing, setIsProcessing] = useState(false);
-  const [pipelineSteps, setPipelineSteps] = useState([]); // grows live as real turns happen; no phantom future rounds
-  const [maxRounds, setMaxRounds] = useState(4); // true safety ceiling, reported by the backend each run
+  const [pipelineSteps, setPipelineSteps] = useState([]);
+  const [maxRounds, setMaxRounds] = useState(4);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   // Real-time dynamic states
   const [geminiStatus, setGeminiStatus] = useState({ status: 'idle', message: 'Standby', content: null });
@@ -25,37 +29,33 @@ export default function App() {
   const [finalResult, setFinalResult] = useState(null);
 
   const eventSourceRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
-  const handleRunTask = (taskText) => {
-    if (!taskText || isProcessing) return;
+  // Load sessions from localStorage on mount
+  useEffect(() => {
+    const savedSessions = localStorage.getItem('mindmesh_sessions');
+    if (savedSessions) {
+      try {
+        setSessions(JSON.parse(savedSessions));
+      } catch (e) {
+        console.error('Failed to load sessions:', e);
+      }
+    }
+  }, []);
 
-    // Reset current states
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+  // Save sessions to localStorage whenever they change
+  useEffect(() => {
+    if (sessions.length > 0) {
+      localStorage.setItem('mindmesh_sessions', JSON.stringify(sessions.slice(0, 20))); // Keep last 20
+    }
+  }, [sessions]);
+
+  const connectSSE = (taskText, isRetry = false) => {
+    if (!isRetry) {
+      setRetryCount(0);
     }
 
-    setCurrentTask(taskText);
-    setIsProcessing(true);
-    setError(null);
-    setPipelineSteps([]);
-    setRounds([]);
-    setFinalResult(null);
-
-    setGeminiStatus({ status: 'thinking', message: 'Starting analysis...', content: null });
-    setOpenRouterStatus({ status: 'idle', message: 'Standby', content: null });
-
-    // Store Session in Sidebar
-    const newSession = {
-      id: Date.now().toString(),
-      title: taskText.slice(0, 35) + (taskText.length > 35 ? '...' : ''),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      task: taskText
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-
-    // Open Real-time SSE stream
-    const url = `https://mind-mesh-x29v.onrender.com/api/ai/task/stream?task=${encodeURIComponent(taskText)}`;
+    const url = `${API_URL}/api/ai/task/stream?task=${encodeURIComponent(taskText)}`;
     const eventSource = new EventSource(url);
     eventSourceRef.current = eventSource;
 
@@ -129,19 +129,73 @@ export default function App() {
 
     eventSource.onerror = (err) => {
       console.error('EventSource connection error:', err);
-      if (isProcessing) {
-        setError('Lost connection to orchestration server stream.');
-        setIsProcessing(false);
-      }
       eventSource.close();
+      
+      if (isProcessing && retryCount < 3) {
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff
+        setError(`Connection lost. Retrying in ${Math.ceil(delay / 1000)}s... (Attempt ${retryCount + 1}/3)`);
+        
+        reconnectTimeoutRef.current = setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          connectSSE(taskText, true);
+        }, delay);
+      } else if (isProcessing) {
+        setError('Connection failed after multiple attempts. Please try again.');
+        setIsProcessing(false);
+        if (geminiStatus.status === 'thinking') setGeminiStatus({ status: 'error', message: 'Connection Failed', content: null });
+        if (openRouterStatus.status === 'thinking') setOpenRouterStatus({ status: 'error', message: 'Connection Failed', content: null });
+      }
     };
   };
 
+  const handleRunTask = (taskText) => {
+    if (!taskText || isProcessing) return;
+
+    // Clear any pending reconnection
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    // Reset current states
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setCurrentTask(taskText);
+    setIsProcessing(true);
+    setError(null);
+    setRetryCount(0);
+    setPipelineSteps([]);
+    setRounds([]);
+    setFinalResult(null);
+
+    setGeminiStatus({ status: 'thinking', message: 'Starting analysis...', content: null });
+    setOpenRouterStatus({ status: 'idle', message: 'Standby', content: null });
+
+    // Store Session in Sidebar
+    const newSession = {
+      id: Date.now().toString(),
+      title: taskText.slice(0, 35) + (taskText.length > 35 ? '...' : ''),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      task: taskText
+    };
+    setSessions((prev) => [newSession, ...prev]);
+    setActiveSessionId(newSession.id);
+
+    // Open Real-time SSE stream
+    connectSSE(taskText);
+  };
+
   const handleStop = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
     setIsProcessing(false);
+    setError(null);
+    setRetryCount(0);
   };
 
   const handleNewSession = () => {
@@ -194,7 +248,7 @@ export default function App() {
               />
 
               {/* Dual Mind Visual Stage: Real-Time Live Agent Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <AIAgentCard
                   name="AI 1"
                   role="Architect"

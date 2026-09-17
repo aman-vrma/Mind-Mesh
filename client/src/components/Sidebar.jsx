@@ -12,7 +12,9 @@ import {
 
 export default function Sidebar({ sessions = [], activeSessionId, onSelectSession, onNewSession, isOpen }) {
   return (
-    <aside className={`w-72 bg-[#0C101A]/80 backdrop-blur-xl border-r border-slate-800/80 flex flex-col transition-all duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+    <aside className={`w-72 bg-[#0C101A]/80 backdrop-blur-xl border-r border-slate-800/80 flex flex-col transition-all duration-300 ${
+      isOpen ? 'translate-x-0' : '-translate-x-full'
+    } md:translate-x-0 fixed md:relative z-20 h-full`}>
       {/* New Session Button */}
       <div className="p-4 border-b border-slate-800/60">
         <button
