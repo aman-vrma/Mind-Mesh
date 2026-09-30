@@ -3,14 +3,15 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import AIAgentCard from './components/AIAgentCard';
 import OrchestratorCore from './components/OrchestratorCore';
+import VisualMindMesh from './components/VisualMindMesh';
 import CollaborationTimeline from './components/CollaborationTimeline';
 import FinalConsensus from './components/FinalConsensus';
 import MessageComposer from './components/MessageComposer';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 export default function App() {
-  // Get backend API URL from environment variable
-  const API_URL = import.meta.env.VITE_API_URL || 'https://mind-mesh-x29v.onrender.com';
+  // Get backend API URL from environment variable, fallback to localhost:5000 in dev
+  const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:5000' : 'https://mind-mesh-x29v.onrender.com');
 
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -20,23 +21,30 @@ export default function App() {
   const [pipelineSteps, setPipelineSteps] = useState([]);
   const [maxRounds, setMaxRounds] = useState(4);
   const [error, setError] = useState(null);
-  const [retryCount, setRetryCount] = useState(0);
   
-  // Real-time dynamic states
+  // Real-time dynamic agent states
   const [geminiStatus, setGeminiStatus] = useState({ status: 'idle', message: 'Standby', content: null });
   const [openRouterStatus, setOpenRouterStatus] = useState({ status: 'idle', message: 'Standby', content: null });
+  const [activeAgent, setActiveAgent] = useState(null);
   const [rounds, setRounds] = useState([]);
   const [finalResult, setFinalResult] = useState(null);
 
-  const eventSourceRef = useRef(null);
-  const reconnectTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Load sessions from localStorage on mount
   useEffect(() => {
     const savedSessions = localStorage.getItem('mindmesh_sessions');
     if (savedSessions) {
       try {
-        setSessions(JSON.parse(savedSessions));
+        const parsed = JSON.parse(savedSessions);
+        setSessions(parsed);
+        if (parsed.length > 0 && !activeSessionId) {
+          const first = parsed[0];
+          setActiveSessionId(first.id);
+          setCurrentTask(first.task || '');
+          setRounds(first.rounds || []);
+          setFinalResult(first.finalResult || null);
+        }
       } catch (e) {
         console.error('Failed to load sessions:', e);
       }
@@ -50,152 +58,204 @@ export default function App() {
     }
   }, [sessions]);
 
-  const connectSSE = (taskText, isRetry = false) => {
-    if (!isRetry) {
-      setRetryCount(0);
+  // Handle SSE streaming via fetch POST with ReadableStream
+  const startStream = async (taskText, previousHistory = [], sessionId) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-    const url = `${API_URL}/api/ai/task/stream?task=${encodeURIComponent(taskText)}`;
-    const eventSource = new EventSource(url);
-    eventSourceRef.current = eventSource;
+    try {
+      const response = await fetch(`${API_URL}/api/ai/task/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          task: taskText,
+          history: previousHistory
+        }),
+        signal: controller.signal
+      });
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.maxRounds) setMaxRounds(data.maxRounds);
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
 
-        switch (data.event) {
-          case 'step_start':
-            setPipelineSteps((prev) => [
-              ...prev,
-              { id: data.step, title: data.title, agent: data.speaker, status: 'active' }
-            ]);
-            if (data.role === 'gemini') {
-              setGeminiStatus((prev) => ({ ...prev, status: 'thinking', message: data.statusMessage }));
-            } else if (data.role === 'openrouter') {
-              setOpenRouterStatus((prev) => ({ ...prev, status: 'thinking', message: data.statusMessage }));
-            }
-            break;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-          case 'step_complete':
-            setPipelineSteps((prev) =>
-              prev.map((s) => (s.id === data.step ? { ...s, status: 'complete' } : s))
-            );
-            if (data.role === 'gemini') {
-              setGeminiStatus({ status: 'complete', message: data.statusMessage, content: data.content });
-            } else if (data.role === 'openrouter') {
-              setOpenRouterStatus({ status: 'complete', message: data.statusMessage, content: data.content });
-            }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-            // Append to collaboration timeline in real time
-            setRounds((prev) => [
-              ...prev,
-              {
-                role: data.role,
-                type: data.type,
-                title: data.title,
-                content: data.content,
-                round: data.round,
-                timestamp: data.timestamp
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop(); // keep partial chunk
+
+        for (const part of parts) {
+          const lines = part.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const jsonStr = line.slice(6).trim();
+              if (jsonStr && jsonStr !== '{}') {
+                try {
+                  const data = JSON.parse(jsonStr);
+                  handleSSEEvent(data, sessionId);
+                } catch (parseErr) {
+                  console.error('Error parsing SSE data:', parseErr);
+                }
               }
-            ]);
-            break;
-
-          case 'pipeline_complete':
-            setIsProcessing(false);
-            setGeminiStatus((prev) => ({ ...prev, status: 'complete', message: 'Proposal & Revision Complete' }));
-            setOpenRouterStatus((prev) => ({ ...prev, status: 'complete', message: 'Review Complete' }));
-            if (data.summary?.finalResult) {
-              setFinalResult(data.summary.finalResult);
             }
-            eventSource.close();
-            break;
-
-          case 'pipeline_error':
-            setError(data.error);
-            setIsProcessing(false);
-            if (geminiStatus.status === 'thinking') setGeminiStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
-            if (openRouterStatus.status === 'thinking') setOpenRouterStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
-            eventSource.close();
-            break;
-
-          default:
-            break;
+          }
         }
-      } catch (err) {
-        console.error('Error parsing SSE event:', err);
       }
-    };
-
-    eventSource.onerror = (err) => {
-      console.error('EventSource connection error:', err);
-      eventSource.close();
-      
-      if (isProcessing && retryCount < 3) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff
-        setError(`Connection lost. Retrying in ${Math.ceil(delay / 1000)}s... (Attempt ${retryCount + 1}/3)`);
-        
-        reconnectTimeoutRef.current = setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-          connectSSE(taskText, true);
-        }, delay);
-      } else if (isProcessing) {
-        setError('Connection failed after multiple attempts. Please try again.');
-        setIsProcessing(false);
-        if (geminiStatus.status === 'thinking') setGeminiStatus({ status: 'error', message: 'Connection Failed', content: null });
-        if (openRouterStatus.status === 'thinking') setOpenRouterStatus({ status: 'error', message: 'Connection Failed', content: null });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('Stream aborted.');
+        return;
       }
-    };
+      console.error('Streaming error:', err);
+      setError(err.message || 'Connection lost.');
+      setIsProcessing(false);
+      setActiveAgent(null);
+      setGeminiStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
+      setOpenRouterStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
+    }
   };
 
-  const handleRunTask = (taskText) => {
-    if (!taskText || isProcessing) return;
+  const handleSSEEvent = (data, sessionId) => {
+    if (data.maxRounds) setMaxRounds(data.maxRounds);
 
-    // Clear any pending reconnection
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
+    switch (data.event) {
+      case 'step_start':
+        setPipelineSteps((prev) => [
+          ...prev,
+          { id: data.step, title: data.title, agent: data.speaker, status: 'active' }
+        ]);
+        setActiveAgent({
+          role: data.role,
+          speaker: data.speaker,
+          message: data.statusMessage
+        });
+        if (data.role === 'gemini') {
+          setGeminiStatus((prev) => ({ ...prev, status: 'thinking', message: data.statusMessage }));
+        } else if (data.role === 'openrouter') {
+          setOpenRouterStatus((prev) => ({ ...prev, status: 'thinking', message: data.statusMessage }));
+        }
+        break;
+
+      case 'step_complete':
+        setPipelineSteps((prev) =>
+          prev.map((s) => (s.id === data.step ? { ...s, status: 'complete' } : s))
+        );
+        setActiveAgent(null);
+        if (data.role === 'gemini') {
+          setGeminiStatus({ status: 'complete', message: data.statusMessage, content: data.content });
+        } else if (data.role === 'openrouter') {
+          setOpenRouterStatus({ status: 'complete', message: data.statusMessage, content: data.content });
+        }
+
+        const newMsg = {
+          role: data.role,
+          speaker: data.speaker,
+          type: data.type,
+          title: data.title,
+          content: data.content,
+          round: data.round,
+          timestamp: data.timestamp || new Date().toISOString()
+        };
+
+        setRounds((prev) => {
+          const next = [...prev, newMsg];
+          setSessions((sList) => sList.map(s => s.id === sessionId ? { ...s, rounds: next } : s));
+          return next;
+        });
+        break;
+
+      case 'pipeline_complete':
+        setIsProcessing(false);
+        setActiveAgent(null);
+        setGeminiStatus((prev) => ({ ...prev, status: 'complete', message: 'Proposal Complete' }));
+        setOpenRouterStatus((prev) => ({ ...prev, status: 'complete', message: 'Review Complete' }));
+        if (data.summary?.finalResult) {
+          const finalRes = data.summary.finalResult;
+          setFinalResult(finalRes);
+          setSessions((sList) => sList.map(s => s.id === sessionId ? { ...s, finalResult: finalRes } : s));
+        }
+        break;
+
+      case 'pipeline_error':
+        setError(data.error);
+        setIsProcessing(false);
+        setActiveAgent(null);
+        if (geminiStatus.status === 'thinking') setGeminiStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
+        if (openRouterStatus.status === 'thinking') setOpenRouterStatus((prev) => ({ ...prev, status: 'error', message: 'Failed' }));
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  const handleRunTask = (taskText, isIntervene = false) => {
+    if (!taskText) return;
+
+    if (isIntervene) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     }
 
-    // Reset current states
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
+    const userMessage = {
+      role: 'user',
+      speaker: 'You',
+      content: isIntervene ? `[Intervention]: ${taskText}` : taskText,
+      timestamp: new Date().toISOString()
+    };
 
+    const previousHistory = [...rounds];
+    const updatedRounds = [...rounds, userMessage];
+
+    setRounds(updatedRounds);
     setCurrentTask(taskText);
     setIsProcessing(true);
     setError(null);
-    setRetryCount(0);
     setPipelineSteps([]);
-    setRounds([]);
-    setFinalResult(null);
 
-    setGeminiStatus({ status: 'thinking', message: 'Starting analysis...', content: null });
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      sessionId = Date.now().toString();
+      setActiveSessionId(sessionId);
+      const newSession = {
+        id: sessionId,
+        title: taskText.slice(0, 35) + (taskText.length > 35 ? '...' : ''),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        task: taskText,
+        rounds: updatedRounds,
+        finalResult: null
+      };
+      setSessions((prev) => [newSession, ...prev]);
+    } else {
+      setSessions((prev) => prev.map(s => s.id === sessionId ? { ...s, rounds: updatedRounds } : s));
+    }
+
+    setGeminiStatus({ status: 'thinking', message: 'Analyzing task...', content: null });
     setOpenRouterStatus({ status: 'idle', message: 'Standby', content: null });
+    setActiveAgent({ role: 'gemini', speaker: 'Aria', message: isIntervene ? 'Processing intervention...' : 'Analyzing the task...' });
 
-    // Store Session in Sidebar
-    const newSession = {
-      id: Date.now().toString(),
-      title: taskText.slice(0, 35) + (taskText.length > 35 ? '...' : ''),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      task: taskText
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-
-    // Open Real-time SSE stream
-    connectSSE(taskText);
+    // Stream SSE with history
+    startStream(taskText, previousHistory, sessionId);
   };
 
   const handleStop = () => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-    }
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
     setIsProcessing(false);
-    setError(null);
-    setRetryCount(0);
+    setActiveAgent(null);
   };
 
   const handleNewSession = () => {
@@ -206,15 +266,19 @@ export default function App() {
     setRounds([]);
     setError(null);
     setPipelineSteps([]);
+    setActiveAgent(null);
     setGeminiStatus({ status: 'idle', message: 'Standby', content: null });
     setOpenRouterStatus({ status: 'idle', message: 'Standby', content: null });
   };
 
   const handleSelectSession = (id) => {
+    handleStop();
     setActiveSessionId(id);
     const session = sessions.find((s) => s.id === id);
     if (session) {
-      setCurrentTask(session.task);
+      setCurrentTask(session.task || '');
+      setRounds(session.rounds || []);
+      setFinalResult(session.finalResult || null);
     }
   };
 
@@ -240,6 +304,15 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div className="max-w-5xl mx-auto space-y-6">
               
+              {/* Visual MindMesh Network Graph (Phase 15 Roadmap) */}
+              <VisualMindMesh
+                activeAgent={activeAgent}
+                isProcessing={isProcessing}
+                currentRound={rounds.length > 0 ? (rounds[rounds.length - 1].round || 1) : 1}
+                steps={pipelineSteps}
+                finalResult={finalResult}
+              />
+
               {/* Real-time Pipeline Progress Status Bar */}
               <OrchestratorCore 
                 steps={pipelineSteps} 
@@ -250,8 +323,8 @@ export default function App() {
               {/* Dual Mind Visual Stage: Real-Time Live Agent Cards */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <AIAgentCard
-                  name="AI 1"
-                  role="Architect"
+                  name="Aria"
+                  role="AI Architect"
                   avatarColor="from-blue-600 to-cyan-500"
                   borderColor="border-blue-500/40"
                   glowColor="shadow-blue-500/10"
@@ -262,8 +335,8 @@ export default function App() {
                 />
 
                 <AIAgentCard
-                  name="AI 2"
-                  role="Reviewer"
+                  name="Nexus"
+                  role="AI Reviewer"
                   avatarColor="from-purple-600 to-pink-500"
                   borderColor="border-purple-500/40"
                   glowColor="shadow-purple-500/10"
@@ -291,8 +364,14 @@ export default function App() {
                 </div>
               )}
 
-              {/* Real-time Collaboration Log Timeline */}
-              {rounds.length > 0 && <CollaborationTimeline rounds={rounds} />}
+              {/* Real-time 3-Way Collaboration Chat Timeline */}
+              {(rounds.length > 0 || isProcessing) && (
+                <CollaborationTimeline 
+                  rounds={rounds} 
+                  userTask={currentTask} 
+                  activeAgent={activeAgent}
+                />
+              )}
 
               {/* Final Consensus Blueprint */}
               {finalResult && (
@@ -305,7 +384,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Persistent Message Composer with Cancel support */}
+          {/* Persistent Message Composer with Intervene & Cancel support */}
           <MessageComposer
             onSendMessage={handleRunTask}
             isProcessing={isProcessing}

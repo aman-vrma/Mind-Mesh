@@ -13,7 +13,7 @@ export default function Header({ status = 'idle' }) {
             <h1 className="text-sm font-bold tracking-tight text-slate-100">MindMesh</h1>
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">v1.0 MVP</span>
           </div>
-          <p className="text-[11px] text-slate-500">Autonomous Dual-Mind Cognitive Synthesizer</p>
+          <p className="text-[11px] text-slate-500">Dual-AI Collaborative Intelligence</p>
         </div>
       </div>
 

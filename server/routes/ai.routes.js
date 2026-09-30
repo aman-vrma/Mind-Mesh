@@ -19,12 +19,15 @@ router.post('/task', async (req, res) => {
   }
 });
 
-// GET /api/ai/task/stream (New SSE endpoint)
-router.get('/task/stream', async (req, res) => {
-  const task = req.query.task;
+// Streaming endpoint supporting both GET and POST (for history payload)
+const handleTaskStream = async (req, res) => {
+  const task = req.method === 'POST' ? req.body.task : req.query.task;
+  const history = req.method === 'POST' 
+    ? (req.body.history || []) 
+    : (req.query.history ? JSON.parse(req.query.history) : []);
 
   if (!task || !task.trim()) {
-    return res.status(400).json({ success: false, error: 'Task query parameter is required.' });
+    return res.status(400).json({ success: false, error: 'Task is required.' });
   }
 
   // Set SSE headers
@@ -38,9 +41,9 @@ router.get('/task/stream', async (req, res) => {
   };
 
   try {
-    await aiService.processTask(task, (eventData) => {
+    await aiService.processTask(task.trim(), (eventData) => {
       sendSSE(eventData);
-    });
+    }, { history });
     res.write(`event: done\ndata: {}\n\n`);
     res.end();
   } catch (error) {
@@ -52,6 +55,9 @@ router.get('/task/stream', async (req, res) => {
   req.on('close', () => {
     logger.info('Client closed SSE connection.');
   });
-});
+};
+
+router.get('/task/stream', handleTaskStream);
+router.post('/task/stream', handleTaskStream);
 
 module.exports = router;

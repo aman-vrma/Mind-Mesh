@@ -3,8 +3,8 @@ import StatusIndicator from './StatusIndicator';
 import { Bot, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export default function AIAgentCard({ 
-  name = 'Gemini', 
-  role = 'Architect', 
+  name = 'Aria', 
+  role = 'AI Architect', 
   avatarColor = 'from-blue-500 to-cyan-500', 
   borderColor = 'border-blue-500/30',
   glowColor = 'shadow-blue-500/10',

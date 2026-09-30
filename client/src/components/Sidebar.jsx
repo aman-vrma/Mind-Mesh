@@ -66,11 +66,11 @@ export default function Sidebar({ sessions = [], activeSessionId, onSelectSessio
         </div>
         <div className="space-y-1 text-[11px] font-mono">
           <div className="flex items-center justify-between px-2 py-1 rounded bg-slate-900/60 border border-slate-800/60 text-slate-300">
-            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-blue-400"></span> Gemini Flash</span>
+            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-blue-400"></span> Aria (Gemini)</span>
             <span className="text-[10px] text-slate-500">Architect</span>
           </div>
           <div className="flex items-center justify-between px-2 py-1 rounded bg-slate-900/60 border border-slate-800/60 text-slate-300">
-            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-purple-400"></span> OpenRouter Free</span>
+            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-purple-400"></span> Nexus (OpenRouter)</span>
             <span className="text-[10px] text-slate-500">Reviewer</span>
           </div>
         </div>

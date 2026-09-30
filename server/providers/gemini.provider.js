@@ -9,7 +9,7 @@ class GeminiProvider extends BaseProvider {
     this.model = model;
   }
 
-  async generateResponse(systemPrompt, userPrompt, retries = 3) {
+  async generateResponse(systemPrompt, userPrompt, retries = 4) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         const response = await this.ai.models.generateContent({
@@ -34,12 +34,22 @@ class GeminiProvider extends BaseProvider {
         const isRateLimit = error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED');
         const isServerBusy = error.message.includes('503') || error.message.includes('UNAVAILABLE');
 
+        // If daily quota exceeded or long delay, fail fast so orchestrator fallback can respond immediately
+        if (isRateLimit && (error.message.includes('Quota exceeded') || error.message.includes('GenerateRequestsPerDay'))) {
+          logger.warn(`Gemini Quota Exceeded — failing fast to allow instant provider fallback.`);
+          return { success: false, error: error.message, provider: this.name };
+        }
+
         if ((isRateLimit || isServerBusy) && attempt < retries) {
-          // Parse retry delay from error if present, else fallback to 15s for 429, 3s for 503
-          let waitTime = 3000;
+          let waitTime = attempt * 2000;
           if (isRateLimit) {
             const match = error.message.match(/retry in ([\d.]+)s/);
-            waitTime = match ? Math.ceil(parseFloat(match[1]) * 1000) + 1000 : 15000;
+            const delaySec = match ? parseFloat(match[1]) : 15;
+            if (delaySec > 5) {
+              logger.warn(`Gemini Rate Limit delay too long (${delaySec}s) — failing fast to allow instant provider fallback.`);
+              return { success: false, error: error.message, provider: this.name };
+            }
+            waitTime = Math.ceil(delaySec * 1000) + 500;
           }
           logger.info(`[Rate-Limit Protection] Waiting ${Math.round(waitTime / 1000)}s before retry attempt ${attempt + 1}...`);
           await new Promise((res) => setTimeout(res, waitTime));

@@ -33,7 +33,7 @@ class AIService {
     );
   }
 
-  async processTask(task, onProgress = null) {
+  async processTask(task, onProgress = null, options = {}) {
     if (
       !task ||
       typeof task !== 'string' ||
@@ -44,7 +44,8 @@ class AIService {
 
     return await this.orchestrator.runPipeline(
       task.trim(),
-      onProgress
+      onProgress,
+      options
     );
   }
 }
