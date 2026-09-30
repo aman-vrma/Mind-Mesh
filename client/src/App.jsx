@@ -5,7 +5,6 @@ import AIAgentCard from './components/AIAgentCard';
 import OrchestratorCore from './components/OrchestratorCore';
 import VisualMindMesh from './components/VisualMindMesh';
 import CollaborationTimeline from './components/CollaborationTimeline';
-import FinalConsensus from './components/FinalConsensus';
 import MessageComposer from './components/MessageComposer';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -370,15 +369,6 @@ export default function App() {
                   rounds={rounds} 
                   userTask={currentTask} 
                   activeAgent={activeAgent}
-                />
-              )}
-
-              {/* Final Consensus Blueprint */}
-              {finalResult && (
-                <FinalConsensus 
-                  content={finalResult} 
-                  onRegenerate={() => handleRunTask(currentTask)}
-                  isProcessing={isProcessing}
                 />
               )}
             </div>

@@ -1,9 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Bot, User, Sparkles, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Bot, User, Sparkles, CheckCircle2, ShieldAlert, Copy, Check } from 'lucide-react';
 
 export default function CollaborationTimeline({ rounds = [], userTask = '', activeAgent = null }) {
   const bottomRef = useRef(null);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  const handleCopy = (text, idx) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(idx);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -120,20 +127,40 @@ export default function CollaborationTimeline({ rounds = [], userTask = '', acti
           return (
             <div key={index} className="flex justify-start animate-fadeInUp">
               <div className="max-w-[88%] sm:max-w-[80%]">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`h-7 w-7 rounded-full bg-gradient-to-br ${avatar.bg} flex items-center justify-center shadow-lg ${avatar.shadow} border ${avatar.border}`}>
-                    <span className="text-sm font-bold text-white">{avatar.text}</span>
-                  </div>
+                <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold ${avatar.textColor}`}>
-                      {aiName}
-                    </span>
-                    {item.round && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-400 font-mono border border-slate-700/50">
-                        Round {item.round}
+                    <div className={`h-7 w-7 rounded-full bg-gradient-to-br ${avatar.bg} flex items-center justify-center shadow-lg ${avatar.shadow} border ${avatar.border}`}>
+                      <span className="text-sm font-bold text-white">{avatar.text}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold ${avatar.textColor}`}>
+                        {aiName}
                       </span>
-                    )}
+                      {item.round && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800/60 text-slate-400 font-mono border border-slate-700/50">
+                          Round {item.round}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  <button
+                    onClick={() => handleCopy(item.content, index)}
+                    className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-slate-800/40 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700/40 transition cursor-pointer"
+                    title="Copy message"
+                  >
+                    {copiedIndex === index ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-400" />
+                        <span className="text-emerald-400 text-[10px]">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span className="text-[10px]">Copy</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
                 <div className="group relative">
