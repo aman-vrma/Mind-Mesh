@@ -26,6 +26,8 @@ const handleTaskStream = async (req, res) => {
     ? (req.body.history || []) 
     : (req.query.history ? JSON.parse(req.query.history) : []);
 
+  const mode = req.method === 'POST' ? req.body.mode : req.query.mode;
+
   if (!task || !task.trim()) {
     return res.status(400).json({ success: false, error: 'Task is required.' });
   }
@@ -43,7 +45,7 @@ const handleTaskStream = async (req, res) => {
   try {
     await aiService.processTask(task.trim(), (eventData) => {
       sendSSE(eventData);
-    }, { history });
+    }, { history, mode });
     res.write(`event: done\ndata: {}\n\n`);
     res.end();
   } catch (error) {

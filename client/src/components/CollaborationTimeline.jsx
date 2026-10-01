@@ -28,6 +28,10 @@ export default function CollaborationTimeline({ rounds = [], userTask = '', acti
     if (speaker) return speaker;
     if (role?.toLowerCase() === 'gemini' || role === 'architect') return 'Aria';
     if (role?.toLowerCase() === 'openrouter' || role === 'reviewer') return 'Nexus';
+    if (role === 'cipher' || role === 'coder') return 'Cipher';
+    if (role === 'aegis' || role === 'security') return 'Aegis';
+    if (role === 'atlas' || role === 'researcher') return 'Atlas';
+    if (role === 'orion' || role === 'critic') return 'Orion';
     if (role?.toLowerCase() === 'orchestrator') return 'MindMesh';
     return role;
   };
@@ -54,6 +58,50 @@ export default function CollaborationTimeline({ rounds = [], userTask = '', acti
         bubbleBorder: 'border-purple-500/30',
         glow: 'from-purple-500 to-pink-500',
         text: 'N'
+      };
+    }
+    if (name === 'Cipher' || role === 'cipher' || role === 'coder') {
+      return {
+        bg: 'from-emerald-500 to-teal-400',
+        border: 'border-emerald-300/50',
+        shadow: 'shadow-emerald-500/30',
+        textColor: 'text-emerald-300',
+        bubbleBorder: 'border-emerald-500/30',
+        glow: 'from-emerald-500 to-teal-500',
+        text: 'C'
+      };
+    }
+    if (name === 'Aegis' || role === 'aegis' || role === 'security') {
+      return {
+        bg: 'from-amber-500 to-rose-400',
+        border: 'border-amber-300/50',
+        shadow: 'shadow-amber-500/30',
+        textColor: 'text-amber-300',
+        bubbleBorder: 'border-amber-500/30',
+        glow: 'from-amber-500 to-rose-500',
+        text: 'S'
+      };
+    }
+    if (name === 'Atlas' || role === 'atlas' || role === 'researcher') {
+      return {
+        bg: 'from-cyan-500 to-indigo-400',
+        border: 'border-cyan-300/50',
+        shadow: 'shadow-cyan-500/30',
+        textColor: 'text-cyan-300',
+        bubbleBorder: 'border-cyan-500/30',
+        glow: 'from-cyan-500 to-indigo-500',
+        text: 'R'
+      };
+    }
+    if (name === 'Orion' || role === 'orion' || role === 'critic') {
+      return {
+        bg: 'from-rose-500 to-orange-400',
+        border: 'border-rose-300/50',
+        shadow: 'shadow-rose-500/30',
+        textColor: 'text-rose-300',
+        bubbleBorder: 'border-rose-500/30',
+        glow: 'from-rose-500 to-orange-500',
+        text: 'O'
       };
     }
     return {
